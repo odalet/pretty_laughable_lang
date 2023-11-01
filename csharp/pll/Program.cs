@@ -1,5 +1,8 @@
 ﻿using System;
 using System.IO;
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.JavaScript;
+using Pll.Codegen;
 
 // ReSharper disable ParameterTypeCanBeEnumerable.Local
 // ReSharper disable ConvertIfStatementToSwitchStatement
@@ -13,25 +16,55 @@ internal static class Program
         var arguments = new Arguments(args);
         if (arguments.ShowHelp)
         {
-            ShowHelp();
+            Help();
             return;
         }
-        
-        if(arguments.InputFileName == null || !File.Exists(arguments.InputFileName))
+
+        if (arguments.InputFileName == null || !File.Exists(arguments.InputFileName))
         {
             Console.Error.WriteLine("Invalid arguments");
-            ShowHelp();
+            Help();
             return;
         }
 
         var text = File.ReadAllText(arguments.InputFileName);
-        
+
         Console.WriteLine(text);
-        
+
         // Parse
+        var parser = new Parser(text);
+        var rootNode = parser.Parse();
+        // Console.WriteLine();
+        // Console.WriteLine("ParseTree:");
+        // Console.WriteLine(rootNode.Dump());
+        
+        // Compile
+        var compiler = new Compiler();
+        var root = compiler.Compile(rootNode);
+        Console.WriteLine();
+        Console.WriteLine("Code:");
+        Console.WriteLine(root.Dump());
+        
+        // Codegen
+        var generator = new CodeGenerator();
+        // var bytes = generator.MakeElf(root);
+        // File.WriteAllBytes("/tmp/test-exe", bytes);
+        
+        var bytes = generator.MakeInMemory(root);
+        try
+        {
+            Console.WriteLine("--> Executing program");
+            using var runnable = new InMemoryProgram(bytes);
+            var ret = runnable.Invoke();
+            Console.WriteLine($"--> Return value: {ret}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("ERROR: " + ex);
+        }
     }
 
-    private static void ShowHelp()
+    private static void Help()
     {
         Console.WriteLine("Usage:");
         Console.WriteLine("pll <input source file> [options]");
@@ -50,9 +83,8 @@ internal static class Program
             Alignment = 16; // defaults
 
             Action<string>? todo = null;
-            
+
             foreach (var arg in args)
-            {
                 if (!arg.StartsWith('-'))
                 {
                     if (todo == null)
@@ -64,18 +96,17 @@ internal static class Program
                     var normalized = arg.ToLowerInvariant().Trim();
                     if (normalized is "-h" or "--help")
                         ShowHelp = true;
-                    else if (normalized == "--exec") 
+                    else if (normalized == "--exec")
                         Exec = true;
-                    else if (normalized == "--print-ir") 
+                    else if (normalized == "--print-ir")
                         PrintIR = true;
                     else if (normalized == "--alignment")
                         todo = x => Alignment = int.Parse(x);
                     else if (normalized is "-o" or "--output")
                         todo = x => OutputFileName = x;
                 }
-            }
         }
-        
+
         public string? InputFileName { get; }
         public string? OutputFileName { get; private set; }
         public bool Exec { get; }
